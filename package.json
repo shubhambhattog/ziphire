@@ -1,0 +1,13 @@
+{
+  "name": "ziphire",
+  "version": "1.0.0",
+  "description": "Bulk resume downloader for TnP cells",
+  "main": "ziphire.js",
+  "scripts": {
+    "start": "node ziphire.js"
+  },
+  "dependencies": {
+    "archiver": "^6.0.1",
+    "xlsx": "^0.18.5"
+  }
+}
