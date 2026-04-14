@@ -249,34 +249,20 @@ async function main() {
 
   // Parse Excel
   const wb = XLSX.readFile(filePath);
-  const ws = wb.Sheets[wb.SheetNames[0]];
-  const rows = XLSX.utils.sheet_to_json(ws, { defval: "" });
-
-  if (!rows.length) {
-    console.error("❌ Excel file is empty.");
+  if (!wb.SheetNames.length) {
+    console.error("❌ Excel file has no sheets.");
     process.exit(1);
   }
 
-  const columns = Object.keys(rows[0]);
-  console.log(`📋 Columns found: ${columns.join(", ")}`);
+  const inputBaseName = sanitize(path.parse(filePath).name) || "excel";
 
-  const detected = detectColumns(columns);
-
-  if (!detected.roll || !detected.name || !detected.resume) {
-    console.error("\n❌ Could not auto-detect columns.");
-    console.error("   Make sure your Excel has columns like:");
-    console.error("   Roll Number / Name / Resume (Drive Link)");
-    console.error(`\n   Found: ${columns.join(", ")}`);
-    process.exit(1);
-  }
-
-  console.log(`✅ Mapped → Roll: "${detected.roll}" | Name: "${detected.name}" | Resume: "${detected.resume}"`);
-  console.log(`📦 Total students: ${rows.length}\n`);
+  console.log(`📚 Sheets found: ${wb.SheetNames.join(", ")}`);
+  console.log(`📦 ZIP name: ${inputBaseName}_resumes.zip\n`);
 
   // Output ZIP path
   const outZip = path.join(
     path.dirname(filePath),
-    `resumes_${Date.now()}.zip`
+    `${inputBaseName}_resumes.zip`
   );
   const output = fs.createWriteStream(outZip);
   const archive = archiver("zip", { zlib: { level: 6 } });
@@ -296,68 +282,140 @@ async function main() {
   let ok = 0;
   let failed = 0;
   let skipped = 0;
+  let totalRows = 0;
+  const sheetSummaries = [];
 
-  for (let i = 0; i < rows.length; i++) {
-    const row = rows[i];
-    const roll = sanitize(row[detected.roll]);
-    const name = sanitize(row[detected.name]);
-    const driveUrl = String(row[detected.resume] || "").trim();
-    const filename = `${roll}_${name}.pdf`;
-    const prefix = `[${i + 1}/${rows.length}]`;
+  for (let s = 0; s < wb.SheetNames.length; s++) {
+    const originalSheetName = wb.SheetNames[s];
+    const sheetFolder = sanitize(originalSheetName) || `Sheet_${s + 1}`;
+    const ws = wb.Sheets[originalSheetName];
+    const rows = XLSX.utils.sheet_to_json(ws, { defval: "" });
 
-    if (!roll || !name || !driveUrl) {
-      console.log(`${prefix} ⏭  Skipped — missing data`);
-      log.push(`SKIP  ${filename} — missing data`);
+    const sheetSummary = {
+      sheet: originalSheetName,
+      rows: rows.length,
+      ok: 0,
+      failed: 0,
+      skipped: 0,
+      status: "processed",
+    };
+
+    if (!rows.length) {
+      console.log(`📄 [${originalSheetName}] Empty sheet, skipping.`);
       addDiag(
         "WARN",
-        "MISSING_DATA",
-        "Row skipped due to missing roll/name/resume",
-        { row: i + 1, roll, name, driveUrl: driveUrl ? "present" : "missing" },
-        "Ensure roll, name, and resume URL columns are filled for this student."
+        "EMPTY_SHEET",
+        "Sheet is empty and was skipped",
+        { sheet: originalSheetName },
+        "Add rows to this sheet if resumes are expected from it."
       );
-      skipped++;
+      sheetSummary.status = "empty";
+      sheetSummaries.push(sheetSummary);
       continue;
     }
 
-    const fileId = extractFileId(driveUrl);
-    if (!fileId) {
-      console.log(`${prefix} ❌ ${filename} — invalid Drive link: "${driveUrl.substring(0, 60)}"`);
-      log.push(`FAIL  ${filename} — invalid Drive link: ${driveUrl}`);
+    const columns = Object.keys(rows[0]);
+    const detected = detectColumns(columns);
+
+    if (!detected.roll || !detected.name || !detected.resume) {
+      console.log(`📄 [${originalSheetName}] Missing required columns, skipping sheet.`);
       addDiag(
         "ERROR",
-        "INVALID_DRIVE_LINK",
-        "Could not extract Drive file ID from URL",
-        { row: i + 1, filename, driveUrl },
-        "Use a file link like https://drive.google.com/file/d/<FILE_ID>/view or a direct ?id=<FILE_ID> URL."
+        "COLUMNS_NOT_DETECTED",
+        "Could not auto-detect required columns in sheet",
+        { sheet: originalSheetName, columns },
+        "Ensure this sheet has Roll, Name, and Resume-link columns."
       );
-      failed++;
+      sheetSummary.status = "invalid_columns";
+      sheetSummaries.push(sheetSummary);
       continue;
     }
 
-    try {
-      process.stdout.write(`${prefix} ⬇  ${filename} ... `);
-      const buffer = await downloadFromDrive(fileId);
-      archive.append(buffer, { name: filename });
-      console.log("✅");
-      log.push(`OK    ${filename}`);
-      ok++;
-    } catch (err) {
-      console.log(`❌ ${err.message}`);
-      log.push(`FAIL  ${filename} — ${err.message}`);
-      addDiag(
-        "ERROR",
-        err.code || "DOWNLOAD_ERROR",
-        err.message,
-        {
-          row: i + 1,
-          filename,
-          fileId,
-          ...(err.details || {}),
-        },
-        "Verify the Drive file is accessible, link is valid, and network is stable."
-      );
-      failed++;
+    totalRows += rows.length;
+    console.log(`📄 [${originalSheetName}] Columns: ${columns.join(", ")}`);
+    console.log(
+      `✅ [${originalSheetName}] Mapped → Roll: "${detected.roll}" | Name: "${detected.name}" | Resume: "${detected.resume}"`
+    );
+
+    for (let i = 0; i < rows.length; i++) {
+      const row = rows[i];
+      const roll = sanitize(row[detected.roll]);
+      const name = sanitize(row[detected.name]);
+      const driveUrl = String(row[detected.resume] || "").trim();
+      const filename = `${roll}_${name}.pdf`;
+      const zipPath = `${sheetFolder}/${filename}`;
+      const prefix = `[${originalSheetName} ${i + 1}/${rows.length}]`;
+
+      if (!roll || !name || !driveUrl) {
+        console.log(`${prefix} ⏭  Skipped — missing data`);
+        log.push(`SKIP  [${originalSheetName}] ${filename} — missing data`);
+        addDiag(
+          "WARN",
+          "MISSING_DATA",
+          "Row skipped due to missing roll/name/resume",
+          {
+            sheet: originalSheetName,
+            row: i + 1,
+            roll,
+            name,
+            driveUrl: driveUrl ? "present" : "missing",
+          },
+          "Ensure roll, name, and resume URL columns are filled for this student."
+        );
+        skipped++;
+        sheetSummary.skipped++;
+        continue;
+      }
+
+      const fileId = extractFileId(driveUrl);
+      if (!fileId) {
+        console.log(`${prefix} ❌ ${filename} — invalid Drive link: "${driveUrl.substring(0, 60)}"`);
+        log.push(`FAIL  [${originalSheetName}] ${filename} — invalid Drive link: ${driveUrl}`);
+        addDiag(
+          "ERROR",
+          "INVALID_DRIVE_LINK",
+          "Could not extract Drive file ID from URL",
+          { sheet: originalSheetName, row: i + 1, filename, driveUrl },
+          "Use a file link like https://drive.google.com/file/d/<FILE_ID>/view or a direct ?id=<FILE_ID> URL."
+        );
+        failed++;
+        sheetSummary.failed++;
+        continue;
+      }
+
+      try {
+        process.stdout.write(`${prefix} ⬇  ${filename} ... `);
+        const buffer = await downloadFromDrive(fileId);
+        archive.append(buffer, { name: zipPath });
+        console.log("✅");
+        log.push(`OK    [${originalSheetName}] ${filename}`);
+        ok++;
+        sheetSummary.ok++;
+      } catch (err) {
+        console.log(`❌ ${err.message}`);
+        log.push(`FAIL  [${originalSheetName}] ${filename} — ${err.message}`);
+        addDiag(
+          "ERROR",
+          err.code || "DOWNLOAD_ERROR",
+          err.message,
+          {
+            sheet: originalSheetName,
+            row: i + 1,
+            filename,
+            fileId,
+            ...(err.details || {}),
+          },
+          "Verify the Drive file is accessible, link is valid, and network is stable."
+        );
+        failed++;
+        sheetSummary.failed++;
+      }
     }
+
+    sheetSummaries.push(sheetSummary);
+    console.log(
+      `📊 [${originalSheetName}] Done — ${sheetSummary.ok} downloaded, ${sheetSummary.failed} failed, ${sheetSummary.skipped} skipped\n`
+    );
   }
 
   const runSummary = {
@@ -365,10 +423,12 @@ async function main() {
     endedAt: new Date().toISOString(),
     inputFile: path.resolve(filePath),
     outputZip: outZip,
-    totalRows: rows.length,
+    totalSheets: wb.SheetNames.length,
+    totalRows,
     ok,
     failed,
     skipped,
+    sheets: sheetSummaries,
     diagnosticsCount: diag.length,
   };
 

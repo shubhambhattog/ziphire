@@ -18,12 +18,13 @@ A Node.js CLI tool for TnP workflows that reads student data from Excel, downloa
 ## What It Does
 
 1. Reads an Excel file passed as CLI argument.
-2. Auto-detects Roll, Name, and Resume columns by header keywords.
-3. Extracts Google Drive file IDs from links.
-4. Downloads files from Drive.
-5. Renames each file to `ROLLNO_NAME.pdf`.
-6. Adds files to a ZIP archive.
-7. Writes `_download_log.txt` inside the ZIP with `OK`, `FAIL`, and `SKIP` lines.
+2. Processes all sheets in the workbook (any sheet names).
+3. Auto-detects Roll, Name, and Resume columns by header keywords for each sheet.
+4. Extracts Google Drive file IDs from links.
+5. Downloads files from Drive.
+6. Renames each file to `ROLLNO_NAME.pdf`.
+7. Adds files to a ZIP archive inside per-sheet folders.
+8. Writes `_download_log.txt` inside the ZIP with `OK`, `FAIL`, and `SKIP` lines.
 
 ## Installation
 
@@ -39,13 +40,13 @@ node ziphire.js students.xlsx
 
 ## Input Expectations
 
-The first sheet in the Excel file should contain student rows with headers similar to:
+Each sheet in the Excel file should contain student rows with headers similar to:
 
 - Roll: `roll`, `enrollment`, `enroll`, `reg`
 - Name: `name`, `student`, `candidate`
 - Resume link: `resume`, `cv`, `drive`, `link`, `url`, `gdrive`
 
-The script auto-detects these columns by keyword matching.
+The script auto-detects these columns by keyword matching for each sheet. Sheets without matching columns are skipped and recorded in diagnostics.
 
 ## Supported Drive Link Formats
 
@@ -57,17 +58,18 @@ The script auto-detects these columns by keyword matching.
 
 A ZIP is created in the same directory as the Excel file:
 
-- `resumes_<timestamp>.zip`
+- `<excel_file_name>_resumes.zip`
 
 Inside the ZIP:
 
-- Resume PDFs named `ROLLNO_NAME.pdf`
+- One folder per sheet (for example `Btech/`, `Mtech/`, or any sheet name)
+- Resume PDFs named `ROLLNO_NAME.pdf` inside the corresponding sheet folder
 - `_download_log.txt` with status lines, for example:
 
 ```text
-OK    231210014_Aniket_Kumar_Singh.pdf
-FAIL  231210034_Bharat_Kumar.pdf - invalid Drive link: <url>
-SKIP  231220058_Shruti_Agarwal.pdf - missing data
+OK    [Btech] 231210014_Aniket_Kumar_Singh.pdf
+FAIL  [Mtech] 231210034_Bharat_Kumar.pdf - invalid Drive link: <url>
+SKIP  [Btech] 231220058_Shruti_Agarwal.pdf - missing data
 ```
 
 ## Common Failure Reasons
