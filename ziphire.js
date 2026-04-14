@@ -432,11 +432,6 @@ async function main() {
     diagnosticsCount: diag.length,
   };
 
-  // Append log file inside ZIP
-  archive.append(log.join("\n"), { name: "_download_log.txt" });
-  archive.append(JSON.stringify(runSummary, null, 2), { name: "_run_summary.json" });
-  archive.append(JSON.stringify(diag, null, 2), { name: "_debug_log.json" });
-
   await new Promise((resolve, reject) => {
     output.once("close", resolve);
     output.once("error", reject);
@@ -447,9 +442,6 @@ async function main() {
   console.log(`\n✅ Done — ${ok} downloaded, ${failed} failed, ${skipped} skipped`);
   console.log(`📁 ZIP saved to: ${outZip}\n`);
 
-  if (failed > 0) {
-    console.log("ℹ️  Check _debug_log.json inside ZIP for failure reasons and fix hints.");
-  }
 }
 
 main().catch((e) => {

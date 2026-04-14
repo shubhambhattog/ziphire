@@ -24,7 +24,7 @@ A Node.js CLI tool for TnP workflows that reads student data from Excel, downloa
 5. Downloads files from Drive.
 6. Renames each file to `ROLLNO_NAME.pdf`.
 7. Adds files to a ZIP archive inside per-sheet folders.
-8. Writes `_download_log.txt` inside the ZIP with `OK`, `FAIL`, and `SKIP` lines.
+8. Generates a clean ZIP output with sheet-wise folders and resumes.
 
 ## Installation
 
@@ -64,13 +64,6 @@ Inside the ZIP:
 
 - One folder per sheet (for example `Btech/`, `Mtech/`, or any sheet name)
 - Resume PDFs named `ROLLNO_NAME.pdf` inside the corresponding sheet folder
-- `_download_log.txt` with status lines, for example:
-
-```text
-OK    [Btech] 231210014_Aniket_Kumar_Singh.pdf
-FAIL  [Mtech] 231210034_Bharat_Kumar.pdf - invalid Drive link: <url>
-SKIP  [Btech] 231220058_Shruti_Agarwal.pdf - missing data
-```
 
 ## Common Failure Reasons
 
